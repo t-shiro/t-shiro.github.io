@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+        <meta charset="utf-8" />
+        <title>ESXi一台で始めるルータ遊び</title>
+        <link rel="stylesheet" href="/theme/css/main.css" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="/">blog.shiro.ma </a></h1>
+                <nav><ul>
+                    <li class="active"><a href="/category/tech.html">Tech</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+<section id="content" class="body">
+  <article>
+    <header>
+      <h1 class="entry-title">
+        <a href="/20190908-vshpere-and-vrouter.html" rel="bookmark"
+           title="Permalink to ESXi一台で始めるルータ遊び">ESXi一台で始めるルータ遊び</a></h1>
+    </header>
+
+    <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2019-09-08T01:00:00+09:00">
+                Published: 日 08 9月 2019
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="/author/romanov.html">romanov</a>
+        </address>
+<p>In <a href="/category/tech.html">Tech</a>.</p>
+<p>tags: <a href="/tag/vmware.html">VMware</a> <a href="/tag/vsphere.html">vSphere</a> <a href="/tag/vyos.html">VyOS</a> </p>
+</footer><!-- /.post-info -->      <h1>はじめに</h1>
+<p>この記事の想定読者層は以下の通りです。</p>
+<ul>
+<li>それなりにLinuxスキル・ITスキルがある</li>
+<li>ネットワークについて手を動かしながら勉強したい</li>
+<li>でも業務用機器を買うのはちょっと気後れする</li>
+<li>無償のVMware vSphere Hypervisor (以下ESXi) 環境を構築できる</li>
+</ul>
+<h1>この記事の目的</h1>
+<p>ESXiは仮想化基盤であり、内部に複数の仮想マシンと複数の仮想的なネットワークをホストすることができます。この記事ではESXi一台でネットワークに習熟することを目的に、仮想ルータと仮想ネットワークで検証用の環境を整備し、手を動かしながら学べる環境作りをします。</p>
+<h1>本編</h1>
+<h2>設定環境</h2>
+<p><img alt="構築する環境のトポロジ" src="/topology2.png" title="トポロジ" width="600"></p>
+<p>ESXiのNICには、192.168.68.239/24が割り振られ、VM Networkとして外部からアクセス可能になっています。この上に三台のVyOSを展開し、192.168.68.2[1-3]を管理用のIPアドレスとして割り振りってアクセス可能にします。</p>
+<h2>VyOSのインストールと管理用IPアドレスの割当</h2>
+<p>細かい説明は省略します。VMをVyOSのISOイメージから起動し、 vyos / vyos でログインし、install image コマンドでインストールし、rebootで一度再起動します。HDDから起動したら、 VM Networkに接続しているeth0に対して、それぞれ <code>set interface ethernet eth0 address 192.168.68.21/24, set service ssh, commit, save</code> などと実行して外部からSSHでログイン可能にします。</p>
+<div class="highlight"><pre><span></span>romanov@hub-host:~$ ssh vyos@192.168.68.21
+The authenticity of host <span class="s1">&#39;192.168.68.21 (192.168.68.21)&#39;</span> can<span class="s1">&#39;t be established.</span>
+<span class="s1">ECDSA key fingerprint is SHA256:65HpxGTHPqA0dJtOgq14XI+ZcpV7jeGaMA+/kRGvVTY.</span>
+<span class="s1">Are you sure you want to continue connecting (yes/no)? yes</span>
+<span class="s1">Warning: Permanently added &#39;</span><span class="m">192</span>.168.68.21<span class="s1">&#39; (ECDSA) to the list of known hosts.</span>
+<span class="s1">Welcome to VyOS</span>
+<span class="s1">vyos@192.168.68.21&#39;</span>s password: 
+Permission denied, please try again.
+vyos@192.168.68.21<span class="err">&#39;</span>s password: 
+
+The programs included with the Debian GNU/Linux system are free software<span class="p">;</span>
+the exact distribution terms <span class="k">for</span> each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+vyos@vyos:~$
+</pre></div>
+
+
+<p>SSHでログインできたら、set hostname VyOS1等と実行してホスト名を変えるのもいいでしょう。</p>
+<div class="highlight"><pre><span></span>vyos@vyos:~$ configure
+<span class="o">[</span>edit<span class="o">]</span>
+vyos@vyos# <span class="nb">set</span> system host-name VyOS1
+<span class="o">[</span>edit<span class="o">]</span>
+vyos@vyos# commit
+<span class="o">[</span>edit<span class="o">]</span>
+vyos@vyos# save
+Saving configuration to <span class="s1">&#39;/config/config.boot&#39;</span>...
+Done
+<span class="o">[</span>edit<span class="o">]</span>
+vyos@vyos# <span class="nb">exit</span>
+<span class="nb">exit</span>
+vyos@vyos:~$ <span class="nb">exit</span>
+<span class="nb">logout</span>
+Connection to <span class="m">192</span>.168.68.21 closed.
+romanov@hub-host:~$ ssh vyos@192.168.68.21
+Welcome to VyOS
+vyos@192.168.68.21<span class="err">&#39;</span>s password:
+
+The programs included with the Debian GNU/Linux system are free software<span class="p">;</span>
+the exact distribution terms <span class="k">for</span> each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Sun Sep  <span class="m">8</span> <span class="m">20</span>:54:51 <span class="m">2019</span> from <span class="m">192</span>.168.68.238
+vyos@VyOS1:~$
+</pre></div>
+
+
+<p>一台目のインストールが終わったら、二台目・三台目も同様にインストールとIPアドレスの設定を行ってください。</p>
+<h2>VyOS間の接続(仮想スイッチとNICの追加)</h2>
+<p>VyOS1-3間それぞれを結ぶために、ESXiの仮想スイッチを新しく作成します。 <code>ネットワーク → 仮想スイッチ → 標準仮想スイッチの追加</code> を選択して新たに仮想スイッチを作成してください。ここでは仮想スイッチの名前を <code>VM間接続</code> としました。</p>
+<p><img alt="標準仮想スイッチの追加" src="/add_vswitch1.png" width="600">
+<img alt="標準仮想スイッチの追加" src="/add_vswitch2.png" width="600"></p>
+<p>仮想スイッチを作成したら、次はVyOS間を擬似的に直結させるために新しいポートグループを3個作成します。 <code>ネットワーク → ポート グループ → ポート グループの追加</code> を順にクリックしてウィザードを開始しましょう。ここでは一つ前で作ったVM間接続の上にそれぞれ <code>VyOS1-VyOS2</code>をVLAN10、
+ <code>VyOS1-VyOS3</code>をVLAN11、 <code>VyOS2-VyOS3</code>をVLAN12で作成しました。 </p>
+<p><img alt="ポートグループの追加" src="/port_group1.png" width="600">
+<img alt="ポートグループの追加" src="/port_group2.png" width="600">
+<img alt="ポートグループの追加" src="/port_group3.png" width="600">
+<img alt="ポートグループの追加" src="/port_group4.png" width="600"></p>
+<p>次はいよいよ、VyOSに対するインターフェイス追加です。<code>仮想マシン → VyOS1 → 編集</code>からVMの設定編集画面に入り、<code>ネットワークアダプタの追加</code> から二枚のNICを追加します。追加するネットワークはそれぞれVyOS1と接続する <code>VyOS1-VyOS2</code> <code>VyOS1-VyOS3</code> を選択してください。</p>
+<p><img alt="NICの追加" src="/add_nic.png" width="600"></p>
+<p>VyOS1に対してNICの追加が終わったら、VyOS2とVyOS3にも同様の作業を実施してください。一通り追加し終わると、仮想スイッチ上では画像の様になります。</p>
+<p><img alt="仮想スイッチの状態" src="/vswitch.png" width="600"></p>
+<h2>VyOS間の接続(VyOS側の設定)</h2>
+<p>ここまで来たらもうこっちのものです。VyOS上のインターフェイスと対向機器を確認して設定を入れていきましょう。確認にはMACアドレスを確認します。下の例ではVyOS1から見て、eth1がVyOS2と、eth2がVyOS3と接続したインターフェイスだとわかります。</p>
+<p><img alt="MACアドレスの確認" src="/nic_mac.png" width="600"></p>
+<div class="highlight"><pre><span></span>vyos@VyOS1:~$ show interfaces ethernet eth1
+eth1: &lt;BROADCAST,MULTICAST&gt; mtu <span class="m">1500</span> qdisc noop state DOWN group default qlen <span class="m">1000</span>
+    link/ether <span class="m">00</span>:0c:29:c1:25:9f brd ff:ff:ff:ff:ff:ff
+
+    RX:  bytes    packets     errors    dropped    overrun      mcast
+             <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>
+    TX:  bytes    packets     errors    dropped    carrier collisions
+             <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>
+vyos@VyOS1:~$ show interfaces ethernet eth2
+eth2: &lt;BROADCAST,MULTICAST&gt; mtu <span class="m">1500</span> qdisc noop state DOWN group default qlen <span class="m">1000</span>
+    link/ether <span class="m">00</span>:0c:29:c1:25:a9 brd ff:ff:ff:ff:ff:ff
+
+    RX:  bytes    packets     errors    dropped    overrun      mcast
+             <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>
+    TX:  bytes    packets     errors    dropped    carrier collisions
+             <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>          <span class="m">0</span>
+vyos@VyOS1:~$
+</pre></div>
+
+
+<p>今回は VyOS1: <code>eth1 → VyOS2, eth2 → VyOS3</code> VyOS2: <code>eth1 → VyOS1, eth2 → VyOS3</code> VyOS3: <code>eth1 → VyOS1, eth2 → VyOS3</code> だったので、それぞれ対向と通信できるようにアドレスを割り振ります。</p>
+<p>VyOS1</p>
+<div class="highlight"><pre><span></span><span class="nb">set</span> interface ethernet eth1 address <span class="m">10</span>.0.0.1/30
+<span class="nb">set</span> interface ethernet eth2 address <span class="m">10</span>.0.0.5/30
+</pre></div>
+
+
+<p>VyOS2</p>
+<div class="highlight"><pre><span></span><span class="nb">set</span> interface ethernet eth1 address <span class="m">10</span>.0.0.2/30
+<span class="nb">set</span> interface ethernet eth2 address <span class="m">10</span>.0.0.9/30
+</pre></div>
+
+
+<p>VyOS3</p>
+<div class="highlight"><pre><span></span><span class="nb">set</span> interface ethernet eth1 address <span class="m">10</span>.0.0.6/30
+<span class="nb">set</span> interface ethernet eth2 address <span class="m">10</span>.0.0.10/30
+</pre></div>
+
+
+<p>それぞれにアドレスを割り振ったら、対向に向けてpingを打って疎通を確認します。</p>
+<div class="highlight"><pre><span></span>vyos@VyOS1# ping -c <span class="m">2</span> <span class="m">10</span>.0.0.2
+PING <span class="m">10</span>.0.0.2 <span class="o">(</span><span class="m">10</span>.0.0.2<span class="o">)</span> <span class="m">56</span><span class="o">(</span><span class="m">84</span><span class="o">)</span> bytes of data.
+<span class="m">64</span> bytes from <span class="m">10</span>.0.0.2: <span class="nv">icmp_seq</span><span class="o">=</span><span class="m">1</span> <span class="nv">ttl</span><span class="o">=</span><span class="m">64</span> <span class="nv">time</span><span class="o">=</span><span class="m">0</span>.188 ms
+<span class="m">64</span> bytes from <span class="m">10</span>.0.0.2: <span class="nv">icmp_seq</span><span class="o">=</span><span class="m">2</span> <span class="nv">ttl</span><span class="o">=</span><span class="m">64</span> <span class="nv">time</span><span class="o">=</span><span class="m">0</span>.207 ms
+
+--- <span class="m">10</span>.0.0.2 ping statistics ---
+<span class="m">2</span> packets transmitted, <span class="m">2</span> received, <span class="m">0</span>% packet loss, <span class="nb">time</span> 1007ms
+rtt min/avg/max/mdev <span class="o">=</span> <span class="m">0</span>.188/0.197/0.207/0.016 ms
+<span class="o">[</span>edit<span class="o">]</span>
+vyos@VyOS1# ping -c <span class="m">2</span> <span class="m">10</span>.0.0.6
+PING <span class="m">10</span>.0.0.6 <span class="o">(</span><span class="m">10</span>.0.0.6<span class="o">)</span> <span class="m">56</span><span class="o">(</span><span class="m">84</span><span class="o">)</span> bytes of data.
+<span class="m">64</span> bytes from <span class="m">10</span>.0.0.6: <span class="nv">icmp_seq</span><span class="o">=</span><span class="m">1</span> <span class="nv">ttl</span><span class="o">=</span><span class="m">64</span> <span class="nv">time</span><span class="o">=</span><span class="m">0</span>.168 ms
+<span class="m">64</span> bytes from <span class="m">10</span>.0.0.6: <span class="nv">icmp_seq</span><span class="o">=</span><span class="m">2</span> <span class="nv">ttl</span><span class="o">=</span><span class="m">64</span> <span class="nv">time</span><span class="o">=</span><span class="m">0</span>.202 ms
+
+--- <span class="m">10</span>.0.0.6 ping statistics ---
+<span class="m">2</span> packets transmitted, <span class="m">2</span> received, <span class="m">0</span>% packet loss, <span class="nb">time</span> 1012ms
+rtt min/avg/max/mdev <span class="o">=</span> <span class="m">0</span>.168/0.185/0.202/0.017 ms
+<span class="o">[</span>edit<span class="o">]</span>
+vyos@VyOS1#
+</pre></div>
+
+
+<h2>ここからが本番</h2>
+<p>ルータが3台あるんだから、BGPで経路とか交換したいよね！という事で、各VyOSのeth0にセカンダリアドレスとしてそれぞれ102.168.[1-3]0.0/24を割り振り、VyOS間でBGPで経路交換させる。 </p>
+<p>VyOS1</p>
+<div class="highlight"><pre><span></span><span class="nb">set</span> interface ethernet eth0 address <span class="m">192</span>.168.10.1/24
+<span class="nb">set</span> protocols bgp <span class="m">10</span>
+<span class="nb">set</span> protocols bgp <span class="m">10</span> parameters router-id <span class="m">192</span>.168.10.1
+<span class="nb">set</span> protocols bgp <span class="m">10</span> neighbor <span class="m">10</span>.0.0.2 remote-as <span class="m">20</span>
+<span class="nb">set</span> protocols bgp <span class="m">10</span> neighbor <span class="m">10</span>.0.0.6 remote-as <span class="m">30</span>
+<span class="nb">set</span> protocols bgp <span class="m">10</span> network <span class="m">192</span>.168.10.0/24
+</pre></div>
+
+
+<p>VyOS2</p>
+<div class="highlight"><pre><span></span><span class="nb">set</span> interface ethernet eth0 address <span class="m">192</span>.168.20.1/24
+<span class="nb">set</span> protocols bgp <span class="m">20</span>
+<span class="nb">set</span> protocols bgp <span class="m">20</span> parameters router-id <span class="m">192</span>.168.20.1
+<span class="nb">set</span> protocols bgp <span class="m">20</span> neighbor <span class="m">10</span>.0.0.1 remote-as <span class="m">10</span>
+<span class="nb">set</span> protocols bgp <span class="m">20</span> neighbor <span class="m">10</span>.0.0.10 remote-as <span class="m">30</span>
+<span class="nb">set</span> protocols bgp <span class="m">20</span> network <span class="m">192</span>.168.20.0/24
+</pre></div>
+
+
+<p>VyOS3</p>
+<div class="highlight"><pre><span></span><span class="nb">set</span> interface ethernet eth0 address <span class="m">192</span>.168.30.1/24
+<span class="nb">set</span> protocols bgp <span class="m">30</span>
+<span class="nb">set</span> protocols bgp <span class="m">30</span> parameters router-id <span class="m">192</span>.168.30.1
+<span class="nb">set</span> protocols bgp <span class="m">30</span> neighbor <span class="m">10</span>.0.0.5 remote-as <span class="m">10</span>
+<span class="nb">set</span> protocols bgp <span class="m">30</span> neighbor <span class="m">10</span>.0.0.9 remote-as <span class="m">20</span>
+<span class="nb">set</span> protocols bgp <span class="m">30</span> network <span class="m">192</span>.168.30.0/24
+</pre></div>
+
+
+<p>設定を投入すると経路が交換される。</p>
+<div class="highlight"><pre><span></span>vyos@VyOS1# run show ip bgp
+BGP table version is <span class="m">0</span>, <span class="nb">local</span> router ID is <span class="m">192</span>.168.10.1
+Status codes: s suppressed, d damped, h history, * valid, &gt; best, i - internal,
+              r RIB-failure, S Stale, R Removed
+Origin codes: i - IGP, e - EGP, ? - incomplete
+
+   Network          Next Hop            Metric LocPrf Weight Path
+*&gt; <span class="m">192</span>.168.10.0     <span class="m">0</span>.0.0.0                  <span class="m">1</span>         <span class="m">32768</span> i
+*  <span class="m">192</span>.168.20.0     <span class="m">10</span>.0.0.6                               <span class="m">0</span> <span class="m">30</span> <span class="m">20</span> i
+*&gt;                  <span class="m">10</span>.0.0.2                 <span class="m">1</span>             <span class="m">0</span> <span class="m">20</span> i
+*&gt; <span class="m">192</span>.168.30.0     <span class="m">10</span>.0.0.6                 <span class="m">1</span>             <span class="m">0</span> <span class="m">30</span> i
+*                   <span class="m">10</span>.0.0.2                               <span class="m">0</span> <span class="m">20</span> <span class="m">30</span> i
+
+Total number of prefixes <span class="m">3</span>
+<span class="o">[</span>edit<span class="o">]</span>
+vyos@VyOS1#
+vyos@VyOS1# run show ip route bgp
+Codes: K - kernel route, C - connected, S - static, R - RIP, O - OSPF,
+       I - ISIS, B - BGP, &gt; - selected route, * - FIB route
+
+B&gt;* <span class="m">192</span>.168.20.0/24 <span class="o">[</span><span class="m">20</span>/1<span class="o">]</span> via <span class="m">10</span>.0.0.2, eth1, <span class="m">00</span>:14:05
+B&gt;* <span class="m">192</span>.168.30.0/24 <span class="o">[</span><span class="m">20</span>/1<span class="o">]</span> via <span class="m">10</span>.0.0.6, eth2, <span class="m">00</span>:10:30
+<span class="o">[</span>edit<span class="o">]</span>
+vyos@VyOS1#
+</pre></div>
+
+
+<p>経路があるので勿論pingも届く</p>
+<div class="highlight"><pre><span></span>vyos@VyOS1# ping -c <span class="m">2</span> <span class="m">192</span>.168.20.1
+PING <span class="m">192</span>.168.20.1 <span class="o">(</span><span class="m">192</span>.168.20.1<span class="o">)</span> <span class="m">56</span><span class="o">(</span><span class="m">84</span><span class="o">)</span> bytes of data.
+<span class="m">64</span> bytes from <span class="m">192</span>.168.20.1: <span class="nv">icmp_req</span><span class="o">=</span><span class="m">1</span> <span class="nv">ttl</span><span class="o">=</span><span class="m">64</span> <span class="nv">time</span><span class="o">=</span><span class="m">0</span>.193 ms
+<span class="m">64</span> bytes from <span class="m">192</span>.168.20.1: <span class="nv">icmp_req</span><span class="o">=</span><span class="m">2</span> <span class="nv">ttl</span><span class="o">=</span><span class="m">64</span> <span class="nv">time</span><span class="o">=</span><span class="m">0</span>.240 ms
+
+--- <span class="m">192</span>.168.20.1 ping statistics ---
+<span class="m">2</span> packets transmitted, <span class="m">2</span> received, <span class="m">0</span>% packet loss, <span class="nb">time</span> 999ms
+rtt min/avg/max/mdev <span class="o">=</span> <span class="m">0</span>.193/0.216/0.240/0.027 ms
+<span class="o">[</span>edit<span class="o">]</span>
+vyos@VyOS1# ping -c <span class="m">2</span> <span class="m">192</span>.168.30.1
+PING <span class="m">192</span>.168.30.1 <span class="o">(</span><span class="m">192</span>.168.30.1<span class="o">)</span> <span class="m">56</span><span class="o">(</span><span class="m">84</span><span class="o">)</span> bytes of data.
+<span class="m">64</span> bytes from <span class="m">192</span>.168.30.1: <span class="nv">icmp_req</span><span class="o">=</span><span class="m">1</span> <span class="nv">ttl</span><span class="o">=</span><span class="m">64</span> <span class="nv">time</span><span class="o">=</span><span class="m">0</span>.191 ms
+<span class="m">64</span> bytes from <span class="m">192</span>.168.30.1: <span class="nv">icmp_req</span><span class="o">=</span><span class="m">2</span> <span class="nv">ttl</span><span class="o">=</span><span class="m">64</span> <span class="nv">time</span><span class="o">=</span><span class="m">0</span>.249 ms
+
+--- <span class="m">192</span>.168.30.1 ping statistics ---
+<span class="m">2</span> packets transmitted, <span class="m">2</span> received, <span class="m">0</span>% packet loss, <span class="nb">time</span> 1000ms
+rtt min/avg/max/mdev <span class="o">=</span> <span class="m">0</span>.191/0.220/0.249/0.029 ms
+<span class="o">[</span>edit<span class="o">]</span>
+vyos@VyOS1#
+</pre></div>
+
+
+<p>Linuxマシンに192.168.10.0/24のアドレスを割り当て、192.168.20.0/24のnexthopを192.168.10.1 にすれば当然届く。</p>
+<div class="highlight"><pre><span></span>root@hub-host:~# ip a sh dev enp1s0
+<span class="m">2</span>: enp1s0: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu <span class="m">1500</span> qdisc pfifo_fast state UP group default qlen <span class="m">1000</span>
+    link/ether 0c:e8:5c:68:34:a8 brd ff:ff:ff:ff:ff:ff
+    inet <span class="m">192</span>.168.68.238/23 brd <span class="m">192</span>.168.69.255 scope global enp1s0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::ee8:5cff:fe68:34a8/64 scope link
+       valid_lft forever preferred_lft forever
+root@hub-host:~# ip a a <span class="m">192</span>.168.10.2/24 dev enp1s0
+root@hub-host:~# ip a sh dev enp1s0
+<span class="m">2</span>: enp1s0: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu <span class="m">1500</span> qdisc pfifo_fast state UP group default qlen <span class="m">1000</span>
+    link/ether 0c:e8:5c:68:34:a8 brd ff:ff:ff:ff:ff:ff
+    inet <span class="m">192</span>.168.68.238/23 brd <span class="m">192</span>.168.69.255 scope global enp1s0
+       valid_lft forever preferred_lft forever
+    inet <span class="m">192</span>.168.10.2/24 scope global enp1s0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::ee8:5cff:fe68:34a8/64 scope link
+       valid_lft forever preferred_lft forever
+root@hub-host:~#
+root@hub-host:~#
+root@hub-host:~#
+root@hub-host:~#
+root@hub-host:~# ip r a <span class="m">192</span>.168.20.0/24 via <span class="m">192</span>.168.10.1
+root@hub-host:~# ping -c <span class="m">2</span> <span class="m">192</span>.168.20.1
+PING <span class="m">192</span>.168.20.1 <span class="o">(</span><span class="m">192</span>.168.20.1<span class="o">)</span> <span class="m">56</span><span class="o">(</span><span class="m">84</span><span class="o">)</span> bytes of data.
+<span class="m">64</span> bytes from <span class="m">192</span>.168.20.1: <span class="nv">icmp_seq</span><span class="o">=</span><span class="m">1</span> <span class="nv">ttl</span><span class="o">=</span><span class="m">63</span> <span class="nv">time</span><span class="o">=</span><span class="m">0</span>.730 ms
+<span class="m">64</span> bytes from <span class="m">192</span>.168.20.1: <span class="nv">icmp_seq</span><span class="o">=</span><span class="m">2</span> <span class="nv">ttl</span><span class="o">=</span><span class="m">63</span> <span class="nv">time</span><span class="o">=</span><span class="m">0</span>.403 ms
+--- <span class="m">192</span>.168.20.1 ping statistics ---
+<span class="m">2</span> packets transmitted, <span class="m">2</span> received, <span class="m">0</span>% packet loss, <span class="nb">time</span> 31ms
+rtt min/avg/max/mdev <span class="o">=</span> <span class="m">0</span>.403/0.566/0.730/0.165 ms
+root@hub-host:~# ssh vyos@192.168.20.1
+The authenticity of host <span class="s1">&#39;192.168.20.1 (192.168.20.1)&#39;</span> can<span class="s1">&#39;t be established.</span>
+<span class="s1">RSA key fingerprint is SHA256:qjqxHtmWcnDJEgdoemgKezAuSLYZrUH8Dvp2ZXAFOCo.</span>
+<span class="s1">Are you sure you want to continue connecting (yes/no)? yes</span>
+<span class="s1">Warning: Permanently added &#39;</span><span class="m">192</span>.168.20.1<span class="s1">&#39; (RSA) to the list of known hosts.</span>
+<span class="s1">Welcome to VyOS</span>
+<span class="s1">vyos@192.168.20.1&#39;</span>s password:
+Linux vyatta <span class="m">3</span>.13.11-1-amd64-vyos <span class="c1">#1 SMP Sat Nov 11 12:10:30 CET 2017 x86_64</span>
+Welcome to VyOS.
+This system is open-source software. The exact distribution terms <span class="k">for</span>
+each module comprising the full system are described in the individual
+files in /usr/share/doc/*/copyright.
+Last login: Sun Sep  <span class="m">8</span> <span class="m">23</span>:25:36 <span class="m">2019</span> from <span class="m">192</span>.168.68.238
+vyos@VyOS2:~$
+</pre></div>
+
+
+<h2>おわりに</h2>
+<p>ESXi一台あればネットワークで遊ぶことができる！やったね！</p>
+    </div><!-- /.entry-content -->
+
+  </article>
+</section>
+        <section id="extras" class="body">
+                <div class="blogroll">
+                        <h2>links</h2>
+                        <ul>
+                            <li><a href="http://getpelican.com/">Pelican</a></li>
+                            <li><a href="http://python.org/">Python.org</a></li>
+                            <li><a href="http://jinja.pocoo.org/">Jinja2</a></li>
+                            <li><a href="#">You can modify those links in your config file</a></li>
+                        </ul>
+                </div><!-- /.blogroll -->
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+
+                            <li><a href="#">You can add links in your config file</a></li>
+                            <li><a href="#">Another social link</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+</body>
+</html>
